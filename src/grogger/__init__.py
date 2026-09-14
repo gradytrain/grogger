@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """Custom logging utility for structured, timestamped script logging."""
 
 import logging
@@ -7,10 +5,8 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
 
-
-class MyLogger:
+class Grogger:
     """A custom logger class that provides structured, timestamped logging functionality.
 
     Also includes automatic log file management and environment-aware path configuration.
@@ -36,8 +32,8 @@ class MyLogger:
             Accepts standard `logging` module levels (e.g., DEBUG, INFO, WARNING, ERROR).
 
     Methods:
-        log(message, exception): Logs an informational or error message.
-            Raises an Exception if `exception` is True.
+        log(message): Logs an informational message.
+        log_error(message): Logs an error message and raises an Exception.
         stop_success(): Logs a successful termination message.
 
     Notes:
@@ -48,9 +44,8 @@ class MyLogger:
         - Log entries follow the format: `timestamp - name - level - message`.
 
     Example:
-        >>> logger = MyLogger(script_name="my_script", log_level=logging.DEBUG)
+        >>> logger = Grogger(script_name="my_script", log_level=logging.DEBUG)
         >>> logger.log("Processing started")
-        >>> logger.log("An error occurred", exception=True)  # Raises Exception
         >>> logger.stop_success()
 
     """
@@ -68,7 +63,9 @@ class MyLogger:
         """
         # Initialize the logger with the script name, log level, and timestamp for log file naming
         self.script_name = script_name
-        self.now = datetime.now(tz=datetime.now().astimezone().tzinfo)  # get local timezone
+        self.now = datetime.now(
+            tz=datetime.now().astimezone().tzinfo
+        )  # get local timezone
         self.timestamp = self.now.strftime("%m-%d-%Y-%H%M")
 
         # path determination
@@ -78,38 +75,46 @@ class MyLogger:
         if os.getenv("CI"):
             self.log_path = self.log_name
         else:
-            log_dir = Path.join(self.project_path, "logs")
+            log_dir = Path(self.project_path / "logs")
             if not Path.exists(log_dir):
                 Path.mkdir(log_dir, parents=True)
-            self.log_path = Path.join(log_dir, self.log_name)
+            self.log_path = Path(log_dir / self.log_name)
 
-        # Configure Logging
-        logging.basicConfig(
-            filename=self.log_path,
-            level=log_level,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        )
+        # Configure logging: file handler for persistent logs, stream handler for the terminal
         self.logger = logging.getLogger(self.script_name)
+        self.logger.setLevel(log_level)
+        self.logger.propagate = False
+
+        if not self.logger.handlers:  # avoid duplicate handlers across instances
+            formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            )
+
+            file_handler = logging.FileHandler(self.log_path)
+            file_handler.setFormatter(formatter)
+            self.logger.addHandler(file_handler)
+
+            stream_handler = logging.StreamHandler()
+            stream_handler.setFormatter(formatter)
+            self.logger.addHandler(stream_handler)
+
         self.logger.info("Logging Start for %s", self.script_name)
-
-    """Log an informational message.
-
-        message (str): Message to log.
-        exception (bool, optional): Unused. Defaults to False.
-    """
 
     def log(self, message: str) -> None:
         """Log an informational message.
 
-        message (str): Message to log.
+        Args:
+            message (str): Message to log.
+
         """
         self.logger.info(message)
-        logger.info(message)
 
     def log_error(self, message: str) -> None:
         """Log an error message and raise an exception.
 
-        message (str): Error message to log.
+        Args:
+            message (str): Error message to log.
+
         """
         self.logger.error(message)
         self.logger.info(self.END_LOG_ERROR)
@@ -118,4 +123,3 @@ class MyLogger:
     def stop_success(self) -> None:
         """Log a successful termination message."""
         self.logger.info(self.END_LOG_NO_ERROR)
-
